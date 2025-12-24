@@ -1,0 +1,24 @@
+name: Täglicher Supplement Reminder
+
+on:
+  schedule:
+    # Cron-Syntax: Minute Stunde Tag Monat Wochentag
+    # 17:00 UTC ist im Winter 18:00 Uhr deutsche Zeit (im Sommer 19:00 Uhr)
+    # Wenn du es immer um 18:00 willst, müsste man es je nach Jahreszeit anpassen
+    # oder einfach 16:00 UTC nehmen (dann ist es 17/18 Uhr).
+    - cron: '0 17 * * *'
+  # Erlaubt dir, den Workflow auch manuell zu testen (Button auf GitHub)
+  workflow_dispatch:
+
+jobs:
+  notify:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Sende Nachricht an ntfy
+        run: |
+          curl \
+            -d "Es ist dringend Zeit deine Supplements zu nehmen! 💊" \
+            -H "Title: Supplement Alarm" \
+            -H "Priority: high" \
+            -H "Tags: pill, muscle" \
+            ntfy.sh/meine-supps-2025-geheim-xyz
