@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import SupplementCard from './SupplementCard';
 import { db } from './firebase';
 import { collection, onSnapshot, doc, updateDoc, addDoc, deleteDoc, setDoc, getDocs } from 'firebase/firestore';
-import { Plus, X, Droplets, Minus, Trophy, Flame, Zap, Sun, Moon } from 'lucide-react';
+import { Plus, X, Droplets, Minus, Trophy, Flame, Zap, Sun, Moon, Check, Activity } from 'lucide-react';
 
 function App() {
   const [supplements, setSupplements] = useState([]);
@@ -14,7 +14,9 @@ function App() {
   const [waterAmount, setWaterAmount] = useState(0);
   const DAILY_GOAL = 3150;
 
-  // --- NEU: State, um zu merken, ob wir gerade bearbeiten ---
+  // --- NEU: State für die Stimmung (1-5) ---
+  const [mood, setMood] = useState(null);
+
   const [editingId, setEditingId] = useState(null);
 
   const [newSupp, setNewSupp] = useState({
@@ -31,6 +33,18 @@ function App() {
     weekday: 'long', year: 'numeric', month: '2-digit', day: '2-digit'
   });
 
+  const getLast7Days = () => {
+    const days = [];
+    for (let i = 6; i >= 0; i--) {
+      const d = new Date();
+      d.setDate(d.getDate() - i);
+      days.push(d);
+    }
+    return days;
+  };
+  const last7Days = getLast7Days();
+
+  // 1. SUPPLEMENTS LADEN
   useEffect(() => {
     const unsubscribe = onSnapshot(collection(db, "supplements"), (snapshot) => {
       const suppsData = snapshot.docs.map(doc => ({
@@ -45,8 +59,7 @@ function App() {
         const allDoneToday = suppsData.every(s => s.history && s.history.includes(todayISO));
         if (allDoneToday) currentStreak++;
         for (let i = 1; i < 365; i++) {
-          const d = new Date();
-          d.setDate(d.getDate() - i);
+          const d = new Date(); d.setDate(d.getDate() - i);
           const dateStr = d.toISOString().split('T')[0];
           const allDoneThatDay = suppsData.every(s => s.history && s.history.includes(dateStr));
           if (allDoneThatDay) currentStreak++; else break; 
@@ -57,10 +70,21 @@ function App() {
     return () => unsubscribe();
   }, [todayISO]);
 
+  // 2. TÄGLICHE LOGS (WASSER & MOOD) LADEN
   useEffect(() => {
-    const waterDocRef = doc(db, "dailyLogs", todayISO);
-    const unsubscribeWater = onSnapshot(waterDocRef, (docSnap) => setWaterAmount(docSnap.exists() ? docSnap.data().water || 0 : 0));
-    return () => unsubscribeWater();
+    const logDocRef = doc(db, "dailyLogs", todayISO);
+    const unsubscribeLogs = onSnapshot(logDocRef, (docSnap) => {
+      if (docSnap.exists()) {
+        const data = docSnap.data();
+        setWaterAmount(data.water || 0);
+        // NEU: Mood laden (oder null wenn noch nichts gewählt)
+        setMood(data.mood || null);
+      } else {
+        setWaterAmount(0);
+        setMood(null);
+      }
+    });
+    return () => unsubscribeLogs();
   }, [todayISO]);
 
   useEffect(() => {
@@ -68,22 +92,31 @@ function App() {
       const querySnapshot = await getDocs(collection(db, "dailyLogs"));
       const logs = {};
       querySnapshot.forEach((doc) => logs[doc.id] = doc.data().water || 0);
-      let currentStreak = 0;
-      if ((logs[todayISO] || 0) >= DAILY_GOAL) currentStreak++;
+      let streakCount = 0;
       for (let i = 1; i < 365; i++) {
         const d = new Date(); d.setDate(d.getDate() - i);
         const dateStr = d.toISOString().split('T')[0];
-        if ((logs[dateStr] || 0) >= DAILY_GOAL) currentStreak++; else break;
+        if ((logs[dateStr] || 0) >= DAILY_GOAL) streakCount++; else break;
       }
-      setWaterStreak(currentStreak);
+      setWaterStreak(streakCount);
     };
     calculateWaterStreak();
-  }, [waterAmount, todayISO]);
+  }, []);
+
+  const displayWaterStreak = waterAmount >= DAILY_GOAL ? waterStreak + 1 : waterStreak;
 
   const updateWater = async (change) => {
     const newAmount = Math.max(0, waterAmount + change);
-    const waterDocRef = doc(db, "dailyLogs", todayISO);
-    await setDoc(waterDocRef, { water: newAmount }, { merge: true });
+    const logDocRef = doc(db, "dailyLogs", todayISO);
+    // merge: true lässt das Mood Feld in Ruhe, wenn wir Wasser ändern
+    await setDoc(logDocRef, { water: newAmount }, { merge: true });
+  };
+
+  // --- NEU: MOOD UPDATE FUNKTION ---
+  const updateMood = async (level) => {
+    setMood(level); // Sofortiges visuelles Feedback
+    const logDocRef = doc(db, "dailyLogs", todayISO);
+    await setDoc(logDocRef, { mood: level }, { merge: true });
   };
 
   const toggleSupplement = async (supp) => {
@@ -106,7 +139,6 @@ function App() {
     await deleteDoc(doc(db, "supplements", id));
   };
 
-  // --- NEU: FUNKTION UM BEARBEITEN MODUS ZU STARTEN ---
   const openEditModal = (supp) => {
     setNewSupp({
       name: supp.name,
@@ -116,22 +148,19 @@ function App() {
       perDay: supp.perDay,
       timeOfDay: supp.timeOfDay || 'morgens'
     });
-    setEditingId(supp.id); // Wir merken uns die ID
+    setEditingId(supp.id);
     setIsModalOpen(true);
   };
 
-  // --- NEU: FUNKTION UM NEU-MODUS ZU STARTEN ---
   const openAddModal = () => {
     setNewSupp({ name: '', dosage: '', type: 'kapsel', stock: '', perDay: '1', timeOfDay: 'morgens' });
-    setEditingId(null); // Kein Bearbeitungs-Modus
+    setEditingId(null);
     setIsModalOpen(true);
   };
 
-  // --- NEU: ZENTRALE SPEICHER FUNKTION (Create OR Update) ---
   const handleSaveSupplement = async (e) => {
     e.preventDefault();
     if (!newSupp.name || !newSupp.dosage) return;
-
     const dataToSave = {
       name: newSupp.name,
       dosage: newSupp.dosage,
@@ -140,19 +169,12 @@ function App() {
       perDay: parseInt(newSupp.perDay) || 1,
       timeOfDay: newSupp.timeOfDay
     };
-
     if (editingId) {
-      // FALL 1: UPDATE (Existierendes ändern)
       const suppRef = doc(db, "supplements", editingId);
-      await updateDoc(suppRef, dataToSave); // history wird NICHT überschrieben, das ist gut!
+      await updateDoc(suppRef, dataToSave);
     } else {
-      // FALL 2: CREATE (Neues anlegen)
-      await addDoc(collection(db, "supplements"), {
-        ...dataToSave,
-        history: [] // Nur bei neuem Eintrag History leer initialisieren
-      });
+      await addDoc(collection(db, "supplements"), { ...dataToSave, history: [] });
     }
-
     setNewSupp({ name: '', dosage: '', type: 'kapsel', stock: '', perDay: '1', timeOfDay: 'morgens' });
     setEditingId(null);
     setIsModalOpen(false);
@@ -163,6 +185,15 @@ function App() {
   const progressPercent = Math.min(100, (waterAmount / DAILY_GOAL) * 100);
   const isGoalReached = waterAmount >= DAILY_GOAL;
 
+  // Icons für Mood (Emojis)
+  const moodOptions = [
+    { level: 1, icon: '😫', label: 'Schlecht' },
+    { level: 2, icon: '😕', label: 'Müde' },
+    { level: 3, icon: '😐', label: 'OK' },
+    { level: 4, icon: '🙂', label: 'Gut' },
+    { level: 5, icon: '🤩', label: 'Top' },
+  ];
+
   return (
     <div className="min-h-screen bg-slate-50 p-6 font-sans pb-24">
       <div className="max-w-md mx-auto space-y-6">
@@ -172,11 +203,42 @@ function App() {
           <h1 className="text-3xl font-extrabold text-slate-900 mt-1">{displayDate}</h1>
         </header>
 
+        {/* MINI KALENDER */}
+        {!loading && (
+          <div className="flex justify-between items-center mb-4 px-1">
+            {last7Days.map((dateObj) => {
+              const dateStr = dateObj.toISOString().split('T')[0];
+              const dayName = dateObj.toLocaleDateString('de-DE', { weekday: 'short' }).slice(0, 2);
+              const isToday = dateStr === todayISO;
+              const allDone = supplements.length > 0 && supplements.every(s => s.history && s.history.includes(dateStr));
+              let bgColor = 'bg-slate-100';
+              let borderColor = 'border-transparent';
+              let textColor = 'text-slate-300';
+              let icon = <div className="w-1.5 h-1.5 rounded-full bg-slate-300" />;
+              if (allDone) {
+                bgColor = 'bg-green-500'; textColor = 'text-white'; icon = <Check className="w-4 h-4" strokeWidth={3} />;
+              } else if (isToday) {
+                bgColor = 'bg-white'; borderColor = 'border-slate-300 border-dashed'; textColor = 'text-slate-400'; icon = <div className="w-2 h-2 rounded-full bg-slate-200" />;
+              } else {
+                bgColor = 'bg-red-50'; textColor = 'text-red-300'; icon = <X className="w-4 h-4" />;
+              }
+              return (
+                <div key={dateStr} className="flex flex-col items-center gap-2">
+                  <span className={`text-[10px] font-bold uppercase ${isToday ? 'text-slate-800' : 'text-slate-400'}`}>{dayName}</span>
+                  <div className={`w-10 h-10 rounded-full flex items-center justify-center border-2 transition-all duration-300 ${bgColor} ${borderColor} ${textColor} ${allDone ? 'shadow-md shadow-green-200 scale-105' : ''}`}>
+                    {icon}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+
         {/* STREAK ANZEIGE */}
-        <div className="grid grid-cols-2 gap-4 mb-6">
-          <div className={`p-3 rounded-xl border-2 flex items-center justify-center gap-2 ${waterStreak > 0 ? 'bg-blue-50 border-blue-200 text-blue-700' : 'bg-white border-slate-100 text-slate-400'}`}>
-            <Flame className={`w-5 h-5 ${waterStreak > 0 ? 'fill-blue-500 text-blue-500' : ''}`} />
-            <div className="flex flex-col items-start leading-none"><span className="text-lg font-black">{waterStreak}</span><span className="text-[10px] font-bold uppercase tracking-wider opacity-70">Wasser Days</span></div>
+        <div className="grid grid-cols-2 gap-4 mb-2">
+          <div className={`p-3 rounded-xl border-2 flex items-center justify-center gap-2 ${displayWaterStreak > 0 ? 'bg-blue-50 border-blue-200 text-blue-700' : 'bg-white border-slate-100 text-slate-400'}`}>
+            <Flame className={`w-5 h-5 ${displayWaterStreak > 0 ? 'fill-blue-500 text-blue-500' : ''}`} />
+            <div className="flex flex-col items-start leading-none"><span className="text-lg font-black">{displayWaterStreak}</span><span className="text-[10px] font-bold uppercase tracking-wider opacity-70">Wasser Days</span></div>
           </div>
           <div className={`p-3 rounded-xl border-2 flex items-center justify-center gap-2 ${suppStreak > 0 ? 'bg-orange-50 border-orange-200 text-orange-700' : 'bg-white border-slate-100 text-slate-400'}`}>
             <Zap className={`w-5 h-5 ${suppStreak > 0 ? 'fill-orange-500 text-orange-500' : ''}`} />
@@ -204,6 +266,34 @@ function App() {
           </div>
         </div>
 
+        {/* --- NEU: STIMMUNGS TRACKER --- */}
+        <div className="bg-white rounded-2xl p-5 border-2 border-slate-100 shadow-sm">
+          <div className="flex items-center gap-2 mb-3">
+            <Activity className="w-5 h-5 text-purple-500" />
+            <span className="text-sm font-bold text-slate-700 uppercase tracking-wide">Dein Energielevel</span>
+          </div>
+          <div className="flex justify-between gap-1">
+            {moodOptions.map((option) => {
+              const isActive = mood === option.level;
+              return (
+                <button
+                  key={option.level}
+                  onClick={() => updateMood(option.level)}
+                  className={`flex-1 py-2 rounded-xl border-2 transition-all duration-200 flex flex-col items-center gap-1
+                    ${isActive 
+                      ? 'border-purple-500 bg-purple-50 scale-105 shadow-sm' 
+                      : 'border-transparent hover:bg-slate-50 grayscale hover:grayscale-0'
+                    }
+                  `}
+                >
+                  <span className="text-2xl">{option.icon}</span>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+        {/* --- ENDE STIMMUNGS TRACKER --- */}
+
         {loading ? (
           <p className="text-center text-slate-400">Lade Daten...</p>
         ) : (
@@ -212,13 +302,7 @@ function App() {
               <h3 className="text-lg font-bold text-slate-700 mb-3 flex items-center gap-2"><Sun className="w-5 h-5 text-orange-400 fill-orange-400" /> Morgens</h3>
               <div className="space-y-4">
                 {morningSupps.length > 0 ? morningSupps.map(supp => (
-                  <SupplementCard 
-                    key={supp.id} 
-                    supplement={supp} 
-                    onToggle={() => toggleSupplement(supp)}
-                    onDelete={handleDeleteSupplement}
-                    onEdit={openEditModal} // NEU: Bearbeiten übergeben
-                  />
+                  <SupplementCard key={supp.id} supplement={supp} onToggle={() => toggleSupplement(supp)} onDelete={handleDeleteSupplement} onEdit={openEditModal} />
                 )) : <p className="text-sm text-slate-400 italic">Nichts für den Morgen geplant.</p>}
               </div>
             </div>
@@ -227,69 +311,27 @@ function App() {
               <h3 className="text-lg font-bold text-slate-700 mb-3 flex items-center gap-2"><Moon className="w-5 h-5 text-indigo-400 fill-indigo-400" /> Abends</h3>
               <div className="space-y-4">
                 {eveningSupps.length > 0 ? eveningSupps.map(supp => (
-                  <SupplementCard 
-                    key={supp.id} 
-                    supplement={supp} 
-                    onToggle={() => toggleSupplement(supp)}
-                    onDelete={handleDeleteSupplement}
-                    onEdit={openEditModal} // NEU: Bearbeiten übergeben
-                  />
+                  <SupplementCard key={supp.id} supplement={supp} onToggle={() => toggleSupplement(supp)} onDelete={handleDeleteSupplement} onEdit={openEditModal} />
                 )) : <p className="text-sm text-slate-400 italic">Nichts für den Abend geplant.</p>}
               </div>
             </div>
           </div>
         )}
 
-        {/* BUTTON: Neuer Eintrag (ruft jetzt openAddModal auf) */}
         <button onClick={openAddModal} className="fixed bottom-6 right-6 bg-green-500 hover:bg-green-600 text-white p-4 rounded-full shadow-lg shadow-green-200 transition-all hover:scale-110 active:scale-95 z-40"><Plus className="w-8 h-8" /></button>
 
         {isModalOpen && (
           <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
             <div className="bg-white rounded-2xl w-full max-w-sm p-6 shadow-2xl relative animate-in fade-in zoom-in duration-200 max-h-[90vh] overflow-y-auto">
               <button onClick={() => setIsModalOpen(false)} className="absolute top-4 right-4 text-slate-400 hover:text-slate-600"><X className="w-6 h-6" /></button>
-              
-              {/* Titel passt sich an: Neu oder Bearbeiten */}
               <h2 className="text-xl font-bold text-slate-800 mb-4">{editingId ? 'Supplement bearbeiten' : 'Neues Supplement'}</h2>
-              
               <form onSubmit={handleSaveSupplement} className="space-y-4">
-                <div>
-                  <label className="block text-sm font-medium text-slate-600 mb-1">Name</label>
-                  <input type="text" placeholder="z.B. Magnesium" className="w-full p-3 bg-slate-50 rounded-xl border border-slate-200 focus:outline-none focus:border-green-500" value={newSupp.name} onChange={(e) => setNewSupp({...newSupp, name: e.target.value})} />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-slate-600 mb-1">Dosierung (Text)</label>
-                  <input type="text" placeholder="z.B. 2 Tabletten" className="w-full p-3 bg-slate-50 rounded-xl border border-slate-200 focus:outline-none focus:border-green-500" value={newSupp.dosage} onChange={(e) => setNewSupp({...newSupp, dosage: e.target.value})} />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-slate-600 mb-1">Einnahmezeit</label>
-                  <div className="grid grid-cols-2 gap-2">
-                    <button type="button" onClick={() => setNewSupp({...newSupp, timeOfDay: 'morgens'})} className={`p-3 rounded-xl border flex items-center justify-center gap-2 transition-all ${newSupp.timeOfDay === 'morgens' ? 'bg-orange-50 border-orange-400 text-orange-700' : 'bg-slate-50 border-slate-200 text-slate-500'}`}><Sun className="w-4 h-4" /> Morgens</button>
-                    <button type="button" onClick={() => setNewSupp({...newSupp, timeOfDay: 'abends'})} className={`p-3 rounded-xl border flex items-center justify-center gap-2 transition-all ${newSupp.timeOfDay === 'abends' ? 'bg-indigo-50 border-indigo-400 text-indigo-700' : 'bg-slate-50 border-slate-200 text-slate-500'}`}><Moon className="w-4 h-4" /> Abends</button>
-                  </div>
-                </div>
-                <div className="grid grid-cols-2 gap-4">
-                  <div>
-                    <label className="block text-sm font-medium text-slate-600 mb-1">Packungsinhalt</label>
-                    <input type="number" placeholder="120" className="w-full p-3 bg-slate-50 rounded-xl border border-slate-200 focus:outline-none focus:border-green-500" value={newSupp.stock} onChange={(e) => setNewSupp({...newSupp, stock: e.target.value})} />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-slate-600 mb-1">Verbrauch/Tag</label>
-                    <input type="number" placeholder="1" className="w-full p-3 bg-slate-50 rounded-xl border border-slate-200 focus:outline-none focus:border-green-500" value={newSupp.perDay} onChange={(e) => setNewSupp({...newSupp, perDay: e.target.value})} />
-                  </div>
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-slate-600 mb-1">Typ</label>
-                  <select className="w-full p-3 bg-slate-50 rounded-xl border border-slate-200 focus:outline-none focus:border-green-500" value={newSupp.type} onChange={(e) => setNewSupp({...newSupp, type: e.target.value})}>
-                    <option value="kapsel">Kapsel / Tablette</option>
-                    <option value="tropfen">Tropfen / Flüssig</option>
-                    <option value="pulver">Pulver</option>
-                  </select>
-                </div>
-                
-                {/* Button Text ändert sich je nach Modus */}
-                <button type="submit" className="w-full bg-green-500 hover:bg-green-600 text-white font-bold py-3 rounded-xl mt-2 transition-colors">
-                  {editingId ? 'Änderungen speichern' : 'Neu erstellen'}
-                </button>
+                <div><label className="block text-sm font-medium text-slate-600 mb-1">Name</label><input type="text" placeholder="z.B. Magnesium" className="w-full p-3 bg-slate-50 rounded-xl border border-slate-200 focus:outline-none focus:border-green-500" value={newSupp.name} onChange={(e) => setNewSupp({...newSupp, name: e.target.value})} /></div>
+                <div><label className="block text-sm font-medium text-slate-600 mb-1">Dosierung (Text)</label><input type="text" placeholder="z.B. 2 Tabletten" className="w-full p-3 bg-slate-50 rounded-xl border border-slate-200 focus:outline-none focus:border-green-500" value={newSupp.dosage} onChange={(e) => setNewSupp({...newSupp, dosage: e.target.value})} /></div>
+                <div><label className="block text-sm font-medium text-slate-600 mb-1">Einnahmezeit</label><div className="grid grid-cols-2 gap-2"><button type="button" onClick={() => setNewSupp({...newSupp, timeOfDay: 'morgens'})} className={`p-3 rounded-xl border flex items-center justify-center gap-2 transition-all ${newSupp.timeOfDay === 'morgens' ? 'bg-orange-50 border-orange-400 text-orange-700' : 'bg-slate-50 border-slate-200 text-slate-500'}`}><Sun className="w-4 h-4" /> Morgens</button><button type="button" onClick={() => setNewSupp({...newSupp, timeOfDay: 'abends'})} className={`p-3 rounded-xl border flex items-center justify-center gap-2 transition-all ${newSupp.timeOfDay === 'abends' ? 'bg-indigo-50 border-indigo-400 text-indigo-700' : 'bg-slate-50 border-slate-200 text-slate-500'}`}><Moon className="w-4 h-4" /> Abends</button></div></div>
+                <div className="grid grid-cols-2 gap-4"><div><label className="block text-sm font-medium text-slate-600 mb-1">Packungsinhalt</label><input type="number" placeholder="120" className="w-full p-3 bg-slate-50 rounded-xl border border-slate-200 focus:outline-none focus:border-green-500" value={newSupp.stock} onChange={(e) => setNewSupp({...newSupp, stock: e.target.value})} /></div><div><label className="block text-sm font-medium text-slate-600 mb-1">Verbrauch/Tag</label><input type="number" placeholder="1" className="w-full p-3 bg-slate-50 rounded-xl border border-slate-200 focus:outline-none focus:border-green-500" value={newSupp.perDay} onChange={(e) => setNewSupp({...newSupp, perDay: e.target.value})} /></div></div>
+                <div><label className="block text-sm font-medium text-slate-600 mb-1">Typ</label><select className="w-full p-3 bg-slate-50 rounded-xl border border-slate-200 focus:outline-none focus:border-green-500" value={newSupp.type} onChange={(e) => setNewSupp({...newSupp, type: e.target.value})}><option value="kapsel">Kapsel / Tablette</option><option value="tropfen">Tropfen / Flüssig</option><option value="pulver">Pulver</option></select></div>
+                <button type="submit" className="w-full bg-green-500 hover:bg-green-600 text-white font-bold py-3 rounded-xl mt-2 transition-colors">{editingId ? 'Änderungen speichern' : 'Neu erstellen'}</button>
               </form>
             </div>
           </div>
