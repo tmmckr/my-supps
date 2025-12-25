@@ -1,13 +1,13 @@
 import React from 'react';
-import { Check, Pill, Droplets, Circle, AlertTriangle, Trash2 } from 'lucide-react';
+// NEU: Pencil importieren
+import { Check, Pill, Droplets, Circle, AlertTriangle, Trash2, Pencil } from 'lucide-react';
 
 const getTodayISO = () => new Date().toISOString().split('T')[0];
 
-const SupplementCard = ({ supplement, onToggle, onDelete }) => {
+const SupplementCard = ({ supplement, onToggle, onDelete, onEdit }) => {
   const today = getTodayISO();
   const isTaken = supplement.history.includes(today);
 
-  // Lagerbestand-Logik
   const stock = supplement.stock || 0;
   const perDay = supplement.perDay || 1;
   const daysLeft = Math.floor(stock / perDay);
@@ -32,21 +32,37 @@ const SupplementCard = ({ supplement, onToggle, onDelete }) => {
         ${(!isTaken && isEmpty) ? "border-red-300 bg-red-50" : ""}
       `}
     >
-      {/* --- NEU: Löschen-Button (erscheint nur bei Hover auf Desktop, oder ist immer da) --- */}
-      <button
-        onClick={(e) => {
-          e.stopPropagation(); // WICHTIG: Verhindert, dass die Karte beim Löschen "angeklickt" wird
-          if (window.confirm(`Möchtest du "${supplement.name}" wirklich löschen?`)) {
-            onDelete(supplement.id);
-          }
-        }}
-        className="absolute top-2 right-2 p-2 text-slate-300 hover:text-red-500 hover:bg-red-50 rounded-full transition-all z-10"
-        title="Löschen"
-      >
-        <Trash2 className="w-4 h-4" />
-      </button>
+      {/* BUTTON CONTAINER OBEN RECHTS */}
+      <div className="absolute top-2 right-2 flex gap-1 z-10">
+        
+        {/* --- NEU: BEARBEITEN BUTTON (STIFT) --- */}
+        <button
+          onClick={(e) => {
+            e.stopPropagation(); // Verhindert Abhaken beim Klicken
+            onEdit(supplement);  // Sendet das Supplement an die App zum Bearbeiten
+          }}
+          className="p-2 text-slate-300 hover:text-blue-500 hover:bg-blue-50 rounded-full transition-all"
+          title="Bearbeiten"
+        >
+          <Pencil className="w-4 h-4" />
+        </button>
 
-      <div className="flex justify-between items-center mt-2"> {/* mt-2 hinzugefügt für Platz oben */}
+        {/* LÖSCHEN BUTTON */}
+        <button
+          onClick={(e) => {
+            e.stopPropagation();
+            if (window.confirm(`Möchtest du "${supplement.name}" wirklich löschen?`)) {
+              onDelete(supplement.id);
+            }
+          }}
+          className="p-2 text-slate-300 hover:text-red-500 hover:bg-red-50 rounded-full transition-all"
+          title="Löschen"
+        >
+          <Trash2 className="w-4 h-4" />
+        </button>
+      </div>
+
+      <div className="flex justify-between items-center mt-2">
         <div className="flex items-center gap-4">
           <div className={`p-3 rounded-full ${isTaken ? 'bg-green-200 text-green-700' : 'bg-blue-100 text-blue-600'}`}>
             {getIcon()}
