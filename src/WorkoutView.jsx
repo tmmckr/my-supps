@@ -233,14 +233,15 @@ const WorkoutView = ({ darkMode, toggleDarkMode }) => {
 
             {/* Übungs-Liste */}
             {activePlan.exercises?.map((ex, exIndex) => (
-              <div key={ex.id} className="bg-white dark:bg-slate-800 rounded-2xl p-5 border shadow-sm dark:border-slate-700">
+              // ÄNDERUNG 1: p-5 zu p-3 oder p-4 für mehr Platz auf Handys
+              <div key={ex.id} className="bg-white dark:bg-slate-800 rounded-2xl p-3 sm:p-5 border shadow-sm dark:border-slate-700">
                 <div className="flex justify-between items-center mb-4">
-                  <h3 className="font-bold text-lg text-slate-800 dark:text-white">{ex.name}</h3>
-                  <button onClick={() => handleDeleteExercise(exIndex)} className="text-slate-300 hover:text-red-500"><X className="w-4 h-4" /></button>
+                  <h3 className="font-bold text-lg text-slate-800 dark:text-white truncate pr-2">{ex.name}</h3>
+                  <button onClick={() => handleDeleteExercise(exIndex)} className="text-slate-300 hover:text-red-500 shrink-0"><X className="w-4 h-4" /></button>
                 </div>
 
-                {/* Header für Sätze */}
-                <div className="grid grid-cols-[30px_1fr_1fr_30px] gap-2 mb-2 text-xs font-bold text-slate-400 uppercase tracking-wide text-center">
+                {/* Header für Sätze - ÄNDERUNG 2: Spaltenbreiten optimiert und gap verkleinert */}
+                <div className="grid grid-cols-[2rem_1fr_1fr_2rem] gap-2 mb-2 text-xs font-bold text-slate-400 uppercase tracking-wide text-center">
                   <span>#</span>
                   <span>kg</span>
                   <span>Wdh</span>
@@ -250,26 +251,29 @@ const WorkoutView = ({ darkMode, toggleDarkMode }) => {
                 {/* Sätze */}
                 <div className="space-y-2">
                   {ex.sets.map((set, setIndex) => (
-                    <div key={setIndex} className="grid grid-cols-[30px_1fr_1fr_30px] gap-2 items-center">
+                    // ÄNDERUNG 2: Spaltenbreiten hier ebenfalls angepasst (2rem statt 30px)
+                    <div key={setIndex} className="grid grid-cols-[2rem_1fr_1fr_2rem] gap-2 items-center">
                       {/* Satz Nummer */}
-                      <div className="flex justify-center items-center bg-slate-100 dark:bg-slate-700 w-8 h-8 rounded-full text-slate-500 text-sm font-bold">
+                      <div className="flex justify-center items-center bg-slate-100 dark:bg-slate-700 w-8 h-8 rounded-full text-slate-500 text-sm font-bold shrink-0">
                         {setIndex + 1}
                       </div>
                       
                       {/* Gewicht Input */}
+                      {/* ÄNDERUNG 3: w-full und min-w-0 hinzugefügt */}
                       <input 
-                        type="text" // Text statt Number für "80" oder "80,5"
+                        type="text" 
                         placeholder="kg"
-                        className="bg-slate-50 dark:bg-slate-900 border dark:border-slate-600 rounded-lg p-2 text-center font-bold text-slate-800 dark:text-white focus:outline-none focus:ring-2 focus:ring-orange-500"
+                        className="w-full min-w-0 bg-slate-50 dark:bg-slate-900 border dark:border-slate-600 rounded-lg p-2 text-center font-bold text-slate-800 dark:text-white focus:outline-none focus:ring-2 focus:ring-orange-500"
                         value={set.weight}
                         onChange={(e) => handleUpdateSet(exIndex, setIndex, 'weight', e.target.value)}
                       />
 
                       {/* Wdh Input */}
+                      {/* ÄNDERUNG 3: w-full und min-w-0 hinzugefügt */}
                       <input 
                         type="text" 
                         placeholder="10-12"
-                        className="bg-slate-50 dark:bg-slate-900 border dark:border-slate-600 rounded-lg p-2 text-center font-bold text-slate-800 dark:text-white focus:outline-none focus:ring-2 focus:ring-orange-500"
+                        className="w-full min-w-0 bg-slate-50 dark:bg-slate-900 border dark:border-slate-600 rounded-lg p-2 text-center font-bold text-slate-800 dark:text-white focus:outline-none focus:ring-2 focus:ring-orange-500"
                         value={set.reps}
                         onChange={(e) => handleUpdateSet(exIndex, setIndex, 'reps', e.target.value)}
                       />
@@ -277,7 +281,7 @@ const WorkoutView = ({ darkMode, toggleDarkMode }) => {
                       {/* Löschen */}
                       <button 
                         onClick={() => handleDeleteSet(exIndex, setIndex)}
-                        className="flex justify-center text-slate-300 hover:text-red-500"
+                        className="flex justify-center text-slate-300 hover:text-red-500 shrink-0"
                       >
                         <Trash2 className="w-4 h-4" />
                       </button>
@@ -350,7 +354,7 @@ const WorkoutView = ({ darkMode, toggleDarkMode }) => {
         )}
 
     </div>
-  );
+  );    
 };
 
 // Kleines Hilfs-Icon für X (fehlte oben im Import manchmal)
